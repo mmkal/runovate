@@ -24,6 +24,35 @@ runs:
         echo "main_branch=${{ inputs.main-branch }}" >> $GITHUB_ENV
         cp $GITHUB_ENV $GITHUB_OUTPUT
 
+    - name: Create ${{ steps.branches.outputs.deps_branch }} if needed
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const { deps_branch, main_branch } = process.env;
+          try {
+            await github.rest.repos.getBranch({
+              ...context.repo,
+              branch: deps_branch,
+            });
+            console.log(`Branch ${deps_branch} exists.`);
+          } catch (error) {
+            if (error.status !== 404) {
+              throw error
+            }
+            console.log(`Branch ${deps_branch} does not exist. Creating it from head of ${main_branch}...`);
+            const {data: mainBranch} = await github.rest.repos.getBranch({
+              ...context.repo,
+              branch: main_branch,
+            });
+            await github.rest.git.createRef({
+              ...context.repo,
+              ref: `refs/heads/${deps_branch}`,
+              sha: mainBranch.commit.sha,
+            });
+            console.log(`Branch ${deps_branch} created from head of ${main_branch}: ${mainBranch.commit.sha}.`);
+          }
+
     - name: Checkout ${{ steps.branches.outputs.deps_branch }}
       uses: actions/checkout@v4
       with:
@@ -42,6 +71,81 @@ runs:
       run: |
         git fetch
         git merge --strategy-option theirs origin/${{ env.main_branch }}
+
+    - name: Install JSON5
+      shell: bash
+      run: |
+        mkdir -p /tmp/json5
+        cd /tmp/json5
+        npm install json5 --no-save
+
+    - name: Update Renovate config
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs')
+          const path = require('path')
+          const JSON5 = require('/tmp/json5/node_modules/json5')
+          const assert = require('assert')
+
+          const {deps_branch} = process.env
+
+          const possibleConfigs = [
+            'renovate.json',
+            'renovate.json5',
+            '.renovaterc',
+            '.renovaterc.json',
+            '.renovaterc.json5',
+            '.github/renovate.json',
+            '.github/renovate.json5',
+            '.gitlab/renovate.json',
+            '.gitlab/renovate.json5',
+            'package.json',
+          ]
+
+          const {config, configPath} = possibleConfigs.flatMap(configPath => {
+            if (!fs.existsSync(configPath)) return []
+            const content = fs.readFileSync(configPath, 'utf8')
+            const parsed = JSON5.parse(content)
+            const config = configPath === 'package.json' ? parsed.renovate : parsed
+            if (!config) return []
+
+            return [{config, configPath}]
+          }).find(Boolean) || {configPath: possibleConfigs[0], config: {}}
+
+          const updatedConfig = {
+            // recommended defaults, but overrideable
+            '$schema': 'https://docs.renovatebot.com/renovate-schema.json',
+            extends: ['config:recommended'],
+            // https://github.com/renovatebot/renovate/discussions/30727
+            commitBody: '{{#if logJSON.hasReleaseNotes}}{{#each logJSON.versions as |release|}}{{# if release.releaseNotes}}##### [v{{{release.version}}}]({{{release.releaseNotes.url}}})\n\n{{{release.releaseNotes.body}}}{{/if}}{{/each}}{{/if}}',
+
+            ...config,
+
+            // required config - the workflow needs these values set up this way
+            baseBranches: [deps_branch],
+            automerge: true,
+            automergeType: 'branch',
+            // https://github.com/renovatebot/renovate/discussions/30727
+            fetchChangeLogs: 'branch',
+          }
+
+          try {
+            assert.deepStrictEqual(config, updatedConfig)
+            console.log(`Config at ${configPath} is already up to date`)
+            return
+          } catch {}
+
+          if (configPath === 'package.json') {
+            const pkg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+            pkg.renovate = updatedConfig
+            fs.writeFileSync(configPath, JSON.stringify(pkg, null, 2) + '\n')
+          } else {
+            const {stringify} = configPath.endsWith('.json5') ? JSON5 : JSON
+            fs.writeFileSync(configPath, stringify(updatedConfig, null, 2) + '\n')
+          }
+
+          console.log(`Renovate config updated successfully at ${configPath}`)
 
     - name: Update lockfile
       shell: bash
@@ -120,11 +224,12 @@ runs:
             .map(line => line.match(/update dependency (.+) to/))
             .filter(Boolean)
             .map(match => match[1])
-          
+
+          const maxListed = 3
           const depsSummary = updatedDeps
-              .slice(0, 4)
+              .slice(0, maxListed)
               .map((dep, i, {length}) => {
-                if (i === 3 && updatedDeps.length > 4) return `and ${updatedDeps.length - 3} more`
+                if (i === maxListed - 1 && updatedDeps.length > maxListed) return `and ${updatedDeps.length - (maxListed - 1)} more`
                 if (i > 0 && i === length - 1) return `and ${dep}`
                 return dep
               })

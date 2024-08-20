@@ -1,0 +1,172 @@
+name: 'Deps Sync Action'
+description: 'Manages a deps branch and synchronizes with main branch'
+inputs:
+  deps-branch:
+    description: 'Name of the deps branch'
+    required: false
+    default: 'deps'
+  main-branch:
+    description: 'Name of the main branch'
+    required: false
+    default: 'main'
+  github-token:
+    description: 'GitHub token'
+    required: false
+    default: ${{ github.token }}
+runs:
+  using: "composite"
+  steps:
+    - id: branches
+      name: Set branch variables
+      shell: bash
+      run: |
+        echo "deps_branch=${{ inputs.deps-branch }}" >> $GITHUB_ENV
+        echo "main_branch=${{ inputs.main-branch }}" >> $GITHUB_ENV
+        cp $GITHUB_ENV $GITHUB_OUTPUT
+
+    - name: Checkout ${{ steps.branches.outputs.deps_branch }}
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ steps.branches.outputs.deps_branch }}
+        fetch-depth: 0
+        token: ${{ inputs.github-token }}
+
+    - name: Configure git
+      shell: bash
+      run: |
+        git config --global user.name "${{ github.actor }}"
+        git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+
+    - name: Merge in latest ${{ steps.branches.outputs.main_branch }}
+      shell: bash
+      run: |
+        git fetch
+        git merge --strategy-option theirs origin/${{ env.main_branch }}
+
+    - name: Update lockfile
+      shell: bash
+      run: |
+        corepack enable
+        pnpm install --no-frozen-lockfile
+
+    - name: Commit lockfile changes
+      id: commit_changes
+      shell: bash
+      run: |
+        git status
+        GIT_STATUS=$(git status --porcelain)
+        if [ -z "$GIT_STATUS" ]; then
+          echo "no working changes, nothing to commit"
+        else
+          echo "changes=yes" >> $GITHUB_OUTPUT
+          git add .
+          git commit -m 'chore: changes after pnpm install' --no-verify
+        fi
+
+    - name: Push changes
+      id: push_changes
+      shell: bash
+      run: |
+        is_ahead=$(git status | grep 'Your branch is ahead' || echo '')
+        if [ -z "$is_ahead" ]; then
+          git status
+          echo "no changes to push"
+        else
+          echo "ahead=yes" >> $GITHUB_OUTPUT
+          git push
+        fi
+
+    - name: Check if ${{ steps.branches.outputs.deps_branch }} branch is ahead of ${{ steps.branches.outputs.main_branch }}
+      id: deps_diff
+      shell: bash
+      run: |
+        git checkout ${{ env.main_branch }}
+        git pull
+        diff=$(git diff ${{ env.deps_branch }})
+        if [ -z "$diff" ]; then
+          echo "no diff between ${{ env.main_branch }} and ${{ env.deps_branch }}"
+          echo "status=clean" >> $GITHUB_OUTPUT
+        else
+          echo "diff between ${{ env.main_branch }} and ${{ env.deps_branch }}:"
+          echo "$diff"
+          echo "status=dirty" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Reset deps branch
+      if: steps.deps_diff.outputs.status == 'clean'
+      shell: bash
+      run: |
+        git checkout ${{ env.deps_branch }}
+        git diff ${{ env.main_branch }} --exit-code
+        git fetch origin
+        git reset --hard origin/${{ env.main_branch }}
+        git push --force-with-lease origin ${{ env.deps_branch }}
+
+    - name: Create pull request
+      if: steps.deps_diff.outputs.status == 'dirty'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const iterator = github.paginate.iterator(github.rest.pulls.list, {
+            ...context.repo,
+            state: 'open',
+          })
+          const {deps_branch: head, main_branch: base} = process.env
+
+          const childProcess = require('child_process')
+          const updateCommits = childProcess.execSync('git --no-pager log --oneline --no-merges main..deps').toString().trim().split('\n')
+          const updatedDeps = updateCommits
+            .map(line => line.match(/update dependency (.+) to/))
+            .filter(Boolean)
+            .map(match => match[1])
+          
+          const depsSummary = updatedDeps
+              .slice(0, 4)
+              .map((dep, i, {length}) => {
+                if (i === 3 && updatedDeps.length > 4) return `and ${updatedDeps.length - 3} more`
+                if (i > 0 && i === length - 1) return `and ${dep}`
+                return dep
+              })
+              .join(', ').replace(', and', ' and')
+          const prTitle = `renovate: update ${updatedDeps.length === 1 ? 'dependency' : 'dependencies'} ${depsSummary} 🌲`
+
+          console.log({prTitle, updateCommits})
+          const prBody = [
+            'This PR was automatically created by the ${{ github.workflow }} workflow.',
+            '',
+            'Review the dependency updates made by @renovate-bot, and merge as needed.',
+            '',
+            '### Updates included:',
+            '',
+            updateCommits.map(commit => `- ${commit}`).join('\n'),
+          ].join('\n')
+
+          for await (const {data: pulls} of iterator) {
+            const existing = pulls.find(p => p.head.ref === head && p.base.ref === base)
+            if (existing) {
+              console.log(`Pull request into ${base} from ${head} already exists: ${existing.title} ${existing.html_url}`)
+
+              if (existing.title === prTitle && existing.body === prBody) {
+                console.log('PR is up to date')
+                return
+              } else {
+                console.log('PR is out of date, updating...')
+                await github.rest.pulls.update({
+                  ...context.repo,
+                  pull_number: existing.number,
+                  title: prTitle,
+                  body: prBody,
+                })
+              }
+              return
+            }
+          }
+
+          await github.rest.pulls.create({
+            ...context.repo,
+            head,
+            base,
+            title: prTitle,
+            body: prBody,
+          })

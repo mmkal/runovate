@@ -134,7 +134,9 @@ runs:
             assert.deepStrictEqual(config, updatedConfig)
             console.log(`Config at ${configPath} is already up to date`)
             return
-          } catch {}
+          } catch {
+            // config was updated, continue
+          }
 
           if (configPath === 'package.json') {
             const pkg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
@@ -147,6 +149,20 @@ runs:
 
           console.log(`Renovate config updated successfully at ${configPath}`)
 
+    - name: Commit renovate config
+      id: commit_renovate_config
+      shell: bash
+      run: |
+        git status
+        GIT_STATUS=$(git status --porcelain)
+        if [ -z "$GIT_STATUS" ]; then
+          echo "no working changes, nothing to commit"
+        else
+          echo "changes=yes" >> $GITHUB_OUTPUT
+          git add .
+          git commit -m 'chore: update renovate config' --no-verify
+        fi
+
     - name: Update lockfile
       shell: bash
       run: |
@@ -154,7 +170,7 @@ runs:
         pnpm install --no-frozen-lockfile
 
     - name: Commit lockfile changes
-      id: commit_changes
+      id: commit_lockfile
       shell: bash
       run: |
         git status

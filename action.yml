@@ -117,8 +117,10 @@ runs:
             // recommended defaults, but overrideable
             '$schema': 'https://docs.renovatebot.com/renovate-schema.json',
             extends: ['config:recommended'],
+
             // https://github.com/renovatebot/renovate/discussions/30727
-            commitBody: '{{#if logJSON.hasReleaseNotes}}{{#each logJSON.versions as |release|}}{{# if release.releaseNotes}}##### [v{{{release.version}}}]({{{release.releaseNotes.url}}})\n\n{{{release.releaseNotes.body}}}{{/if}}{{/each}}{{/if}}',
+            // disabled until renovate can add an escaping option: https://github.com/renovatebot/renovate/discussions/31230
+            // commitBody: '{{#if logJSON.hasReleaseNotes}}{{#each logJSON.versions as |release|}}{{# if release.releaseNotes}}##### [v{{{release.version}}}]({{{release.releaseNotes.url}}})\n\n{{{release.releaseNotes.body}}}{{/if}}{{/each}}{{/if}}',
 
             ...config,
 

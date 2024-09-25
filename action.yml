@@ -165,13 +165,25 @@ runs:
           git commit -m 'chore: update renovate config' --no-verify
         fi
 
+    - name: Check for a package.json
+      id: check_package_json
+      shell: bash
+      run: |
+        if [ -f package.json ]; then
+          echo "exists=yes" >> $GITHUB_OUTPUT
+        else
+          echo "exists=no" >> $GITHUB_OUTPUT
+        fi
+
     - name: Update lockfile
+      if: steps.check_package_json.outputs.exists == 'yes'
       shell: bash
       run: |
         corepack enable
         pnpm install --no-frozen-lockfile
 
     - name: Commit lockfile changes
+      if: steps.check_package_json.outputs.exists == 'yes'
       id: commit_lockfile
       shell: bash
       run: |

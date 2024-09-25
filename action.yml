@@ -135,21 +135,19 @@ runs:
           try {
             assert.deepStrictEqual(config, updatedConfig)
             console.log(`Config at ${configPath} is already up to date`)
-            return
           } catch {
             // config was updated, continue
-          }
+            if (configPath === 'package.json') {
+              const pkg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+              pkg.renovate = updatedConfig
+              fs.writeFileSync(configPath, JSON.stringify(pkg, null, 2) + '\n')
+            } else {
+              const {stringify} = configPath.endsWith('.json5') ? JSON5 : JSON
+              fs.writeFileSync(configPath, stringify(updatedConfig, null, 2) + '\n')
+            }
 
-          if (configPath === 'package.json') {
-            const pkg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
-            pkg.renovate = updatedConfig
-            fs.writeFileSync(configPath, JSON.stringify(pkg, null, 2) + '\n')
-          } else {
-            const {stringify} = configPath.endsWith('.json5') ? JSON5 : JSON
-            fs.writeFileSync(configPath, stringify(updatedConfig, null, 2) + '\n')
+            console.log(`Renovate config updated successfully at ${configPath}`)
           }
-
-          console.log(`Renovate config updated successfully at ${configPath}`)
 
     - name: Commit renovate config
       id: commit_renovate_config

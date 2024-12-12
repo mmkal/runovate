@@ -61,6 +61,10 @@ jobs:
         github-token: ${{ secrets.MY_GITHUB_TOKEN }}
 ```
 
+## What's going on
+
+There's not all that much to this, it's just using the GitHub API and git CLI to manage branches, pull requests etc. It's all in a single [action.yml](./action.yml) file which is fairly easy to understand if you know bash and JavaScript.
+
 ## Ejecting
 
 If you decide you want to go back to a "normal" renovate setup, just delete the workflow you created, and update your renovate config to use the settings you want.

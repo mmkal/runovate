@@ -168,6 +168,7 @@ runs:
     - name: Update lockfile
       shell: bash
       run: |
+        npm install -g corepack@0.31.0 # todo: delete if https://github.com/nodejs/corepack/issues/612 is resolved
         corepack enable
         pnpm install --no-frozen-lockfile
 

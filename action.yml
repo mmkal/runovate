@@ -261,6 +261,7 @@ runs:
             'This PR was automatically created by the ${{ github.workflow }} workflow.',
             '',
             'Review the dependency updates made by @renovate-bot, and merge as needed.',
+            `- [ ] Check/uncheck this box with pull_request 'edited' trigger to force a CI run.`,
             '',
             '### Updates included:',
             '',

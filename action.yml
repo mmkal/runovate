@@ -242,7 +242,7 @@ runs:
           updateCommits.reverse() // reverse to put commits oldest -> newest
           const updatedDepEntries = updateCommits
             .map(line => ({
-              depName: line.match(/update dependency (.+) to/)?.[1],
+              depName: line.match(/update dependency (.+) to/)?.[1] || line.match(/update (.*) to/)?.[1],
               commit: line,
             }))
           const updatedDeps = [

@@ -239,11 +239,24 @@ runs:
 
           const childProcess = require('child_process')
           const updateCommits = childProcess.execSync('git --no-pager log --oneline --no-merges main..deps').toString().trim().split('\n')
-          let updatedDeps = updateCommits
-            .map(line => line.match(/update dependency (.+) to/))
-            .filter(Boolean)
-            .map(match => match[1])
-          updatedDeps = [...new Set(updatedDeps)]
+          const updatedDepEntries = updateCommits
+            .map(line => ({
+              depName: line.match(/update dependency (.+) to/)?.[1],
+              commit: line,
+            }))
+          const updatedDeps = [
+            ...new Set(
+              updatedDepEntries
+                .map(e => e.depName)
+                .filter(Boolean),
+            ),
+          ]
+          // get the latest commit for each dependency
+          const uniqueCommits = Object.values(
+            Object.fromEntries(
+              updatedDepEntries.map(e => [e.depName || e.commit, e.commit]),
+            ),
+          )
 
           const maxListed = 3
           const depsSummary = updatedDeps
@@ -256,7 +269,7 @@ runs:
               .join(', ').replace(', and', ' and')
           const prTitle = ['renovate: update', depsSummary, '🌲'].filter(Boolean).join(' ')
 
-          console.log({prTitle, updateCommits})
+          console.log({prTitle, uniqueCommits})
           const prBody = [
             'This PR was automatically created by the ${{ github.workflow }} workflow.',
             '',
@@ -265,7 +278,7 @@ runs:
             '',
             '### Updates included:',
             '',
-            updateCommits.map(commit => `- ${commit}`).join('\n'),
+            uniqueCommits.map(commit => `- ${commit}`).join('\n'),
           ].join('\n')
 
           for await (const {data: pulls} of iterator) {

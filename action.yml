@@ -196,7 +196,11 @@ runs:
           echo "no changes to push"
         else
           echo "ahead=yes" >> $GITHUB_OUTPUT
-          git push
+          git push || {
+            echo "push failed, try applying the following changes manually:"
+            git log -n 1
+            exit 1
+          }
         fi
 
     - name: Check if ${{ steps.branches.outputs.deps_branch }} branch is ahead of ${{ steps.branches.outputs.main_branch }}

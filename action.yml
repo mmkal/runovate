@@ -161,6 +161,7 @@ runs:
           echo "no working changes, nothing to commit"
         else
           echo "changes=yes" >> $GITHUB_OUTPUT
+          git diff
           git add .
           git commit -m 'chore: update renovate config' --no-verify
         fi
@@ -182,6 +183,7 @@ runs:
           echo "no working changes, nothing to commit"
         else
           echo "changes=yes" >> $GITHUB_OUTPUT
+          git diff
           git add .
           git commit -m 'chore: changes after pnpm install' --no-verify
         fi
@@ -197,8 +199,7 @@ runs:
         else
           echo "ahead=yes" >> $GITHUB_OUTPUT
           git push || {
-            echo "push failed, try applying the following changes manually:"
-            git log -n 1
+            echo "push failed, try applying the above changes manually"
             exit 1
           }
         fi

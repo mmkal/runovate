@@ -161,7 +161,6 @@ runs:
           echo "no working changes, nothing to commit"
         else
           echo "changes=yes" >> $GITHUB_OUTPUT
-          git diff
           git add .
           git commit -m 'chore: update renovate config' --no-verify
         fi
@@ -183,7 +182,6 @@ runs:
           echo "no working changes, nothing to commit"
         else
           echo "changes=yes" >> $GITHUB_OUTPUT
-          git diff
           git add .
           git commit -m 'chore: changes after pnpm install' --no-verify
         fi
@@ -199,7 +197,8 @@ runs:
         else
           echo "ahead=yes" >> $GITHUB_OUTPUT
           git push || {
-            echo "push failed, try applying the above changes manually"
+            echo "push failed, try running the following manually, then commit and push the changes"
+            echo "git fetch origin && git checkout origin/${{ env.deps_branch }} && git merge --strategy-option theirs origin/${{ env.main_branch }} && pnpm install --no-frozen-lockfile"
             exit 1
           }
         fi
